@@ -19,6 +19,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.SurfaceView;
@@ -40,7 +41,9 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.text.SimpleDateFormat;
 import java.util.Calendar;
+import java.util.Date;
 import java.util.List;
 
 public class CameraActivity extends Activity
@@ -64,7 +67,7 @@ public class CameraActivity extends Activity
     private ImageView flashBtn;
     private ImageView CameraFlipView;
     private int mCurrentCameraId = 0;  //1是前置 0是后置
-    private SurfaceView sf;
+    private SurfaceView mSurfaceView;
     private CameraGrid mCameraGrid;
     private int type = 1;
     private ImageView backImageView;
@@ -79,14 +82,16 @@ public class CameraActivity extends Activity
         type = getIntent().getIntExtra(CAMERA_TYPE, CAMERA_TYPE_2);
         initView();
         InitData();
+
+
     }
 
     private void InitData() {
-        preview = new CameraPreview(this, sf);
+        preview = new CameraPreview(this, mSurfaceView);
         preview.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
-        ((FrameLayout) findViewById(com.wwh.cam.R.id.layout)).addView(preview);
+        ((FrameLayout) findViewById(R.id.layout)).addView(preview);
         preview.setKeepScreenOn(true);
-        sf.setOnTouchListener(this);
+        mSurfaceView.setOnTouchListener(this);
         mCameraGrid.setType(type);
         backImageView.setOnClickListener(this);
         CameraFlipView.setOnClickListener(this);
@@ -99,7 +104,7 @@ public class CameraActivity extends Activity
         action = (ImageView) findViewById(R.id.action_button);
         flashBtn = (ImageView) findViewById(R.id.flash_view);
         CameraFlipView = (ImageView) findViewById(R.id.camera_flip_view);
-        sf = (SurfaceView) findViewById(R.id.surfaceView);
+        mSurfaceView = (SurfaceView) findViewById(R.id.surfaceView);
         mCameraGrid = (CameraGrid) findViewById(R.id.camera_grid);
         backImageView = (ImageView) findViewById(R.id.camera_back);
     }
@@ -107,30 +112,41 @@ public class CameraActivity extends Activity
     private Handler handler = new Handler();
 
     private void takePhoto() {
-        cameraOrientation = new MyOrientationDetector(mContext);
-        if (camera != null) {
-            int orientation = cameraOrientation.getOrientation();
-            Camera.Parameters cameraParameter = camera.getParameters();
-            cameraParameter.setRotation(90);
-            cameraParameter.set("rotation", 90);
-            if ((orientation >= 45) && (orientation < 135)) {
-                cameraParameter.setRotation(180);
-                cameraParameter.set("rotation", 180);
-            }
-            if ((orientation >= 135) && (orientation < 225)) {
-                cameraParameter.setRotation(270);
-                cameraParameter.set("rotation", 270);
-            }
-            if ((orientation >= 225) && (orientation < 315)) {
-                cameraParameter.setRotation(0);
-                cameraParameter.set("rotation", 0);
-            }
-            if (mCurrentCameraId == 1) {
-                cameraParameter.setRotation(270);
-                cameraParameter.set("rotation", 270);
-            }
-            camera.setParameters(cameraParameter);
+        try {
+            //            cameraOrientation = new MyOrientationDetector(mContext);
+            //            if (camera != null) {
+            //                int orientation = cameraOrientation.getOrientation();
+            //                Camera.Parameters cameraParameter = camera.getParameters();
+            //                cameraParameter.setRotation(90);
+            //                cameraParameter.set("rotation", 90);
+            //                if ((orientation >= 45) && (orientation < 135)) {
+            //                    cameraParameter.setRotation(180);
+            //                    cameraParameter.set("rotation", 180);
+            //                }
+            //                if ((orientation >= 135) && (orientation < 225)) {
+            //                    cameraParameter.setRotation(270);
+            //                    cameraParameter.set("rotation", 270);
+            //                }
+            //                if ((orientation >= 225) && (orientation < 315)) {
+            //                    cameraParameter.setRotation(0);
+            //                    cameraParameter.set("rotation", 0);
+            //                }
+            //                if (mCurrentCameraId == 1) {
+            //                    cameraParameter.setRotation(270);
+            //                    cameraParameter.set("rotation", 270);
+            //                }
+            //                camera.setParameters(cameraParameter);
+
+            //          }
             camera.takePicture(shutterCallback, rawCallback, jpegCallback);
+        } catch (Throwable t) {
+            t.printStackTrace();
+            Toast.makeText(getApplication(), "拍照失败，请重试！", Toast.LENGTH_LONG).show();
+            try {
+                camera.startPreview();
+            } catch (Throwable e) {
+
+            }
         }
     }
 
@@ -144,6 +160,7 @@ public class CameraActivity extends Activity
                 camera = Camera.open(mCurrentCameraId);
                 camera.startPreview();
                 preview.setCamera(camera);
+                preview.reAutoFocus();
             } catch (RuntimeException ex) {
                 Toast.makeText(mContext, "未发现相机", Toast.LENGTH_LONG).show();
             }
@@ -157,6 +174,7 @@ public class CameraActivity extends Activity
             preview.setCamera(null);
             camera.release();
             camera = null;
+            preview.setNull();
         }
         super.onPause();
     }
@@ -179,7 +197,7 @@ public class CameraActivity extends Activity
 
     PictureCallback jpegCallback = new PictureCallback() {
         public void onPictureTaken(byte[] data, Camera camera) {
-            new SaveImageTask().execute(data);
+            new SaveImageTask(data).execute();
             resetCam();
         }
     };
@@ -265,14 +283,20 @@ public class CameraActivity extends Activity
         return tmpSb.toString();
     }
 
-    private class SaveImageTask extends AsyncTask<byte[], Void, String> {
+    private class SaveImageTask extends AsyncTask<Void, Void, String> {
+        private byte[] data;
+
+        SaveImageTask(byte[] data) {
+            this.data = data;
+        }
+
         @Override
-        protected String doInBackground(byte[]... data) {
+        protected String doInBackground(Void... params) {
             // Write to SD Card
             String path = "";
             try {
                 showProgressDialog("处理中");
-                path = saveToSDCard(data[0]);
+                path = saveToSDCard(data);
             } catch (FileNotFoundException e) {
                 e.printStackTrace();
             } catch (IOException e) {
@@ -286,6 +310,7 @@ public class CameraActivity extends Activity
         protected void onPostExecute(String path) {
             super.onPostExecute(path);
             if (!TextUtils.isEmpty(path)) {
+                Log.d("DemoLog", "path=" + path);
                 dismissProgressDialog();
                 Intent intent = new Intent();
                 intent.setClass(CameraActivity.this, PhotoProcessActivity.class);
@@ -337,7 +362,6 @@ public class CameraActivity extends Activity
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inJustDecodeBounds = true;
         BitmapFactory.decodeByteArray(data, 0, data.length, options);
-
         //PHOTO_SIZE = options.outHeight > options.outWidth ? options.outWidth : options.outHeight;
         PHOTO_SIZE_W = options.outWidth;
         PHOTO_SIZE_H = options.outHeight;
@@ -449,7 +473,7 @@ public class CameraActivity extends Activity
         }
         try {
             camera = Camera.open(mCurrentCameraId);
-            camera.setPreviewDisplay(sf.getHolder());
+            camera.setPreviewDisplay(mSurfaceView.getHolder());
             preview.setCamera(camera);
             camera.startPreview();
         } catch (Exception e) {
