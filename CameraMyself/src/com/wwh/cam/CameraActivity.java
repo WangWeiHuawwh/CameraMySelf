@@ -197,6 +197,7 @@ public class CameraActivity extends Activity
 
     PictureCallback jpegCallback = new PictureCallback() {
         public void onPictureTaken(byte[] data, Camera camera) {
+			showProgressDialog("处理中");
             new SaveImageTask(data).execute();
             resetCam();
         }
@@ -295,7 +296,6 @@ public class CameraActivity extends Activity
             // Write to SD Card
             String path = "";
             try {
-                showProgressDialog("处理中");
                 path = saveToSDCard(data);
             } catch (FileNotFoundException e) {
                 e.printStackTrace();
@@ -390,7 +390,11 @@ public class CameraActivity extends Activity
             is = new ByteArrayInputStream(data);
             BitmapRegionDecoder decoder = BitmapRegionDecoder.newInstance(is, false);
             try {
-                croppedImage = decoder.decodeRegion(rect, new BitmapFactory.Options());
+                 BitmapFactory.Options opts=new BitmapFactory.Options();
+                opts.inTempStorage = new byte[100 * 1024];
+                opts.inPreferredConfig = Bitmap.Config.RGB_565;
+                opts.inPurgeable = true;
+                croppedImage = decoder.decodeRegion(rect, opts);
             } catch (IllegalArgumentException e) {
             }
         } catch (Throwable e) {
